@@ -160,7 +160,7 @@ if __name__ == "__main__":
         cfg = compose(config_name="mnist_config_64")
         trainer_cfg = cfg.trainer
         factory = MNISTFactory(world_size = trainer_cfg.world_size, 
-                               per_device_batch_size = 32 // trainer_cfg.world_size,
-                               use_single=True)
+                               per_device_batch_size = 256 // trainer_cfg.world_size,
+                               use_single=cfg.use_single)
         trainer = MNISTTrainer(cfg.diffusion, factory, trainer_cfg)
         trainer.run()
