@@ -37,14 +37,14 @@ class MNISTFactory(AbstractTrainerFactory):
             attention_bias = True,
             spatial_size = 32,
             temporal_size = 16,
-            spatial_patch_size = 4,
-            temporal_patch_size = 2,
+            spatial_patch_size = 2,
+            temporal_patch_size = 4,
             num_embeds_ada_norm = None,
             class_condition=False
         )
         return model
     def make_optimizer(self, model):
-        return ZeroRedundancyOptimizer(model.parameters(), optimizer_class=torch.optim.AdamW, lr = 1e-4, weight_decay=0.0)
+        return ZeroRedundancyOptimizer(model.parameters(), optimizer_class=torch.optim.AdamW, lr = 3e-4, weight_decay=0.0)
     def make_dataloader(self, rank : int): 
         per_device_batch_size = self.per_device_batch_size
         dataset = MovingMNISTGrayDataset(data_dir = "./datasets/", sequence_length=16, train=True, resolution=32)
@@ -164,7 +164,7 @@ if __name__ == "__main__":
         cfg = compose(config_name=args.config)
         trainer_cfg = cfg.trainer
         factory = MNISTFactory(world_size = trainer_cfg.world_size, 
-                               per_device_batch_size = 256 // trainer_cfg.world_size,
+                               per_device_batch_size = 32 // trainer_cfg.world_size,
                                use_single=cfg.use_single)
         trainer = MNISTTrainer(cfg.diffusion, factory, trainer_cfg)
         trainer.run()
