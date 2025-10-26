@@ -17,7 +17,7 @@ from torch.utils.data.distributed import DistributedSampler
 from data_script.mnist import MovingMNISTGrayDataset
 from data_script.single_dataset import SingleDataset
 from data_script.dataset_info import VideoDatasetInfo
-from data_script.wand_display_video import display_video_tensor
+from data_script.wand_display_video import display_mnist_video_tensor
 from dataclasses import dataclass
 
 class MNISTFactory(AbstractTrainerFactory):
@@ -124,7 +124,7 @@ class MNISTTrainer(DefaultTrainer):
                 image_array = datasetinfo.vae_postprocessor.postprocess(image = image_array, output_type='pt')
             else:
                 image_array = normalize_image(image_array)
-            display_video_tensor(image_array)
+            display_mnist_video_tensor(image_array)
     def prepare_input(self, data):
         image = data["video"].to(self.rank)
         device = self.rank
