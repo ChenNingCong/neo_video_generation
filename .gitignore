@@ -5,3 +5,8 @@ __pycache__/
 .DS_Store
 .idea/
 node_modules/
+git.sh
+wandb_key.sh
+wandb
+datasets/
+*.mp4
