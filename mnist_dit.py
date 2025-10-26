@@ -160,7 +160,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, required=True, help='Path to config file')
     args = parser.parse_args()
-    with initialize(version_base=None, config_path="config"):
+    with initialize(version_base=None, config_path="config/mnist"):
         cfg = compose(config_name=args.config)
         trainer_cfg = cfg.trainer
         factory = MNISTFactory(world_size = trainer_cfg.world_size, 
