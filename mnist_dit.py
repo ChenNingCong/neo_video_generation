@@ -156,8 +156,12 @@ class MNISTTrainer(DefaultTrainer):
         return self.loss_fun(sample, target)
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, required=True, help='Path to config file')
+    args = parser.parse_args()
     with initialize(version_base=None, config_path="config"):
-        cfg = compose(config_name="mnist_config_64")
+        cfg = compose(config_name=args.config)
         trainer_cfg = cfg.trainer
         factory = MNISTFactory(world_size = trainer_cfg.world_size, 
                                per_device_batch_size = 256 // trainer_cfg.world_size,
