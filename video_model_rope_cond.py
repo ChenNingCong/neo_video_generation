@@ -411,7 +411,8 @@ class DiT(nn.Module):
         # x += self.pos_embed  # (N, T, D) we use roPE instead
         t = self.t_embedder(t)                   # (N, D)
         c = t
-        if self.y_embedder is not None:
+        if y is not None:
+            assert self.y_embedder is not None
             y = self.y_embedder(y, self.training)    # (N, D)
             c = t + y
         else:
