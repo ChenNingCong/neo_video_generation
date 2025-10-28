@@ -396,7 +396,7 @@ class DiT(nn.Module):
         to = self.temporal_size // tp
         ho = self.spatial_size[0] // sp[0]
         wo = self.spatial_size[1] // sp[1]
-        x = x.reshape(shape=(x.shape[0], to, ho, wo, tp, sp, sp, self.out_channels))
+        x = x.reshape(shape=(x.shape[0], to, ho, wo, tp, sp[0], sp[1], self.out_channels))
         x = torch.einsum('nthwopqc->nctohpwq', x)
         imgs = x.reshape(shape=(x.shape[0], self.out_channels, self.temporal_size, self.spatial_size[0], self.spatial_size[1]))
         return imgs

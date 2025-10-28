@@ -524,7 +524,25 @@ class MNISTTrainer(DefaultTrainer):
                 image_array = datasetinfo.vae_postprocessor.postprocess(image = image_array, output_type='pt')
             else:
                 image_array = normalize_image(image_array)
-            display_mnist_video_tensor(image_array)
+            # image_array is of shape B, C, T, H, Wimage_array = torch.clamp(image_array, 0, 1) * 255
+            import math
+            image_array = image_array[0:1]
+            print(image_array.shape)
+            image_array = torch.clamp(image_array, 0, 1) * 255
+            from einops import rearrange
+            from torchvision.io import write_video
+            total_batch_size = image_array.shape[0]
+            rows = int(math.sqrt(total_batch_size))
+            cols =  total_batch_size // rows
+            image_array = rearrange(
+                    image_array,
+                    '(x y) c t h w -> t (x h) (y w) c',
+                    x=rows, y=cols
+                )
+            # torch.save(results, "help.pth")
+            write_video("test.mp4", image_array.cpu().detach(), fps=8, options={'crf': '10'})
+            video = wandb.Video(data_or_path="test.mp4")
+            wandb.log({"video": video}, commit=False)
     def prepare_input(self, data):
         image = data["video"].to(self.rank)
         device = self.rank
