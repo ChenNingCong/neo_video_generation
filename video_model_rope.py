@@ -14,12 +14,79 @@ import torch.nn as nn
 import numpy as np
 import math
 from timm.models.vision_transformer import PatchEmbed, Mlp
-from timm.models.vision_transformer import Attention as NormalAttention
 import pos_multi_embedding
 def modulate(x, shift, scale):
     return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
+from typing import Type, Final, Tuple
+import torch.nn.functional as F
+from rope_nd import RoPENd
+import einops
+from functools import partial
+class NormalAttention(nn.Module):
+    fused_attn: Final[bool]
 
+    def __init__(
+            self,
+            dim: int,
+            num_heads: int = 8,
+            qkv_bias: bool = False,
+            qk_norm: bool = False,
+            proj_bias: bool = True,
+            attn_drop: float = 0.,
+            proj_drop: float = 0.,
+            norm_layer: Type[nn.Module] = nn.LayerNorm,
+            input_shape : Tuple = (0, 0, 0)
+    ) -> None:
+        super().__init__()
+        assert dim % num_heads == 0, 'dim should be divisible by num_heads'
+        self.num_heads = num_heads
+        self.head_dim = dim // num_heads
+        self.scale = self.head_dim ** -0.5
+        from timm.layers import use_fused_attn
+        self.fused_attn = use_fused_attn()
 
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
+        self.k_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(dim, dim, bias=proj_bias)
+        self.proj_drop = nn.Dropout(proj_drop)
+        self.rope = RoPENd(shape=(*input_shape, dim // num_heads), padding=True)
+        self.input_shape = input_shape
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, N, C = x.shape
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv.unbind(0)
+        q, k = self.q_norm(q), self.k_norm(k)
+        # q, k must be of shape (b, h, w, t, dim)
+        # now q, k are (B, num_heads, N, head_dim)
+        q = q.reshape(B, self.num_heads, self.input_shape[0], self.input_shape[1], self.input_shape[2], self.head_dim)
+        k = k.reshape(B, self.num_heads, self.input_shape[0], self.input_shape[1], self.input_shape[2], self.head_dim)
+        # q = einops.rearrange(q, 'b head (h w t) d -> b head h w t d', h = self.input_shape[0], w = self.input_shape[1], t = self.input_shape[2])
+        # k = einops.rearrange(k, 'b head (h w t) d -> b head h w t d', h = self.input_shape[0], w = self.input_shape[1], t = self.input_shape[2])
+        q = self.rope(q)
+        k = self.rope(k)
+        # q = einops.rearrange(q, 'b head h w t d -> b head (h w t) d')
+        # k = einops.rearrange(k, 'b head h w t d -> b head (h w t) d')
+        q = q.reshape(B, self.num_heads, N, self.head_dim)
+        k = k.reshape(B, self.num_heads, N, self.head_dim)
+        
+        if self.fused_attn:
+            x = F.scaled_dot_product_attention(
+                q, k, v,
+                dropout_p=self.attn_drop.p if self.training else 0.,
+            )
+        else:
+            q = q * self.scale
+            attn = q @ k.transpose(-2, -1)
+            attn = attn.softmax(dim=-1)
+            attn = self.attn_drop(attn)
+            x = attn @ v
+
+        x = x.transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+        return x
 #################################################################################
 #               Embedding Layers for Timesteps and Class Labels                 #
 #################################################################################
@@ -235,6 +302,7 @@ class DiT(nn.Module):
         self.temporal_patch_size = temporal_patch_size
         self.num_heads = num_heads
         self.hidden_size = hidden_size
+        self.input_shape = (spatial_size // spatial_patch_size, spatial_size // spatial_patch_size, temporal_size // temporal_patch_size)
         self.x_embedder = PatchEmbed3D(
             spatial_size=spatial_size,
             temporal_size=temporal_size,
@@ -258,7 +326,7 @@ class DiT(nn.Module):
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
 
         self.blocks = nn.ModuleList([
-            DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)
+            DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, input_shape=self.input_shape) for _ in range(depth)
         ])
         per_patch_output_size = self.out_channels * temporal_patch_size * (spatial_patch_size ** 2)
         self.final_layer = FinalLayer(hidden_size, per_patch_output_size)
@@ -340,7 +408,7 @@ class DiT(nn.Module):
         y: (N,) tensor of class labels
         """
         x = self.x_embedder(x) # (N, T, D)
-        x += self.pos_embed  # (N, T, D)
+        # x += self.pos_embed  # (N, T, D) we use roPE instead
         t = self.t_embedder(t)                   # (N, D)
         c = t
         if self.y_embedder is not None:
