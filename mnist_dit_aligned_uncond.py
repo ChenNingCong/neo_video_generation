@@ -433,8 +433,8 @@ class MNISTFactory(AbstractTrainerFactory):
             spatial_patch_size = 4,
             temporal_patch_size = 1,
             num_embeds_ada_norm = None,
-            class_condition=True,
-            num_classes=100
+            class_condition=False,
+            num_classes=-1
         )
         return model
     def make_optimizer(self, model):
@@ -479,10 +479,7 @@ def sample_image(rank : int, model, max_timestep: int, sampling_step : int, batc
         val = (i / sampling_step) * max_timestep
         # we use a uniform sampling here
         timestep = torch.full(size=(batch_size,), fill_value=val).to(device)
-        if use_classlabel:
-            pred = model(X0, timestep=timestep, class_labels = class_labels)
-        else:
-            pred = model(X0, timestep=timestep)
+        pred = model(X0, timestep=timestep, class_labels = class_labels)
         X0 += pred.sample * (1 / sampling_step)
     if datasetinfo.is_latent:
         X0 = datasetinfo.vae_preprocessor(X0)
@@ -504,12 +501,12 @@ class MNISTTrainer(DefaultTrainer):
         max_timestep = self.diff_config.max_timestep
         rank = self.rank
         sampling_step = self.diff_config.sampling_step
-        use_classlabel = True
+        use_classlabel = False
         device = rank
         total_batch_size = 4
         step = total_batch_size // world_size
         batch_size = step
-        class_labels = torch.randint(0, 90, (batch_size,), dtype=torch.long).to(device)
+        class_labels = None
         image_array = sample_image(rank,
                                    model, 
                                    max_timestep,
@@ -552,11 +549,11 @@ class MNISTTrainer(DefaultTrainer):
         alpha = (timestep / max_timestep).view(-1, *([1]*(len(image.shape) - 1)))
         point = (1 - alpha) * noise + alpha * image
         target = image - noise
-        class_labels = data["labels"].to(self.rank).to(torch.long)
-        return {"point" : point, "target" : target, "timestep" : timestep, "class_labels" : class_labels}
+        # class_labels = data["labels"].to(self.rank).to(torch.long)
+        return {"point" : point, "target" : target, "timestep" : timestep, "class_labels" : None}
     def calculate_loss(self, point, timestep, target, class_labels):
         model = self.model
-        output = model(point, timestep=timestep, class_labels = class_labels)
+        output = model(point, timestep=timestep, class_labels = None)
         sample = output.sample
         return self.loss_fun(sample, target)
 
