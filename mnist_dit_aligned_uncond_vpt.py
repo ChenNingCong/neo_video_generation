@@ -1,7 +1,7 @@
 # %load_ext autoreload
 # %autoreload 3
 import torch
-from video_model_rope_cond import DiTModelWrapper
+from video_model_rope_cond_general import DiTModelWrapper
 from dataclasses import dataclass
 import wandb
 import torch.distributed as dist
@@ -430,7 +430,7 @@ class MNISTFactory(AbstractTrainerFactory):
             attention_bias = True,
             spatial_size = 32,
             temporal_size = 16,
-            spatial_patch_size = 4,
+            spatial_patch_size = 1,
             temporal_patch_size = 1,
             num_embeds_ada_norm = None,
             class_condition=False,
