@@ -515,19 +515,14 @@ class MNISTTrainer(DefaultTrainer):
                                    datasetinfo = datasetinfo,
                                    use_classlabel = use_classlabel,
                                    device= device)
-        
-        image_arrays = [torch.zeros_like(image_array, device=rank) for _ in range(world_size)]
-        dist.all_gather(image_arrays, image_array)
         if rank == 0:
-            image_array = torch.cat(image_arrays, dim = 0)
+            image_array = image_array
             if datasetinfo.is_latent:
                 image_array = datasetinfo.vae_postprocessor.postprocess(image = image_array, output_type='pt')
             else:
                 image_array = normalize_image(image_array)
             # image_array is of shape B, C, T, H, Wimage_array = torch.clamp(image_array, 0, 1) * 255
             import math
-            image_array = image_array[0:1]
-            print(image_array.shape)
             image_array = torch.clamp(image_array, 0, 1) * 255
             from einops import rearrange
             from torchvision.io import write_video
