@@ -241,9 +241,9 @@ class PatchEmbed3D(nn.Module):
     """
     def __init__(
             self,
-            spatial_size=256,
+            spatial_size=(3,5),
             temporal_size=16,
-            spatial_patch_size=4,
+            spatial_patch_size=(1,1),
             temporal_patch_size=4,
             in_chans=3,
             embed_dim=768,
@@ -252,8 +252,8 @@ class PatchEmbed3D(nn.Module):
             bias=True,
     ):
         super().__init__()
-        self.patch_size = (temporal_patch_size, spatial_patch_size, spatial_patch_size)
-        self.grid_size = (temporal_size // temporal_patch_size, spatial_size // spatial_patch_size, spatial_size // spatial_patch_size)
+        self.patch_size = (temporal_patch_size, spatial_patch_size[0], spatial_patch_size[1])
+        self.grid_size = (temporal_size // temporal_patch_size, spatial_size[0] // spatial_patch_size[0], spatial_size[0] // spatial_patch_size[0])
         self.num_patches = math.prod(self.grid_size)
         self.flatten = flatten
 
@@ -278,9 +278,9 @@ class DiT(nn.Module):
     """
     def __init__(
         self,
-        spatial_size=64,
+        spatial_size:Tuple[int,int]=(3,5),
         temporal_size=16,
-        spatial_patch_size=4,
+        spatial_patch_size:Tuple[int,int]=(1,1),
         temporal_patch_size=4,
         in_channels=4,
         hidden_size=1152,
@@ -302,7 +302,7 @@ class DiT(nn.Module):
         self.temporal_patch_size = temporal_patch_size
         self.num_heads = num_heads
         self.hidden_size = hidden_size
-        self.input_shape = (spatial_size // spatial_patch_size, spatial_size // spatial_patch_size, temporal_size // temporal_patch_size)
+        self.input_shape = (spatial_size[0] // spatial_patch_size[0], spatial_size[1] // spatial_patch_size[1], temporal_size // temporal_patch_size)
         self.x_embedder = PatchEmbed3D(
             spatial_size=spatial_size,
             temporal_size=temporal_size,
@@ -328,7 +328,7 @@ class DiT(nn.Module):
         self.blocks = nn.ModuleList([
             DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, input_shape=self.input_shape) for _ in range(depth)
         ])
-        per_patch_output_size = self.out_channels * temporal_patch_size * (spatial_patch_size ** 2)
+        per_patch_output_size = self.out_channels * temporal_patch_size * spatial_patch_size[0] * spatial_patch_size[1]
         self.final_layer = FinalLayer(hidden_size, per_patch_output_size)
         self.initialize_weights()
 
@@ -394,10 +394,11 @@ class DiT(nn.Module):
         tp = self.temporal_patch_size
         sp = self.spatial_patch_size
         to = self.temporal_size // tp
-        ho = wo = self.spatial_size // sp
+        ho = self.spatial_size[0] // sp[0]
+        wo = self.spatial_size[1] // sp[1]
         x = x.reshape(shape=(x.shape[0], to, ho, wo, tp, sp, sp, self.out_channels))
         x = torch.einsum('nthwopqc->nctohpwq', x)
-        imgs = x.reshape(shape=(x.shape[0], self.out_channels, self.temporal_size, self.spatial_size, self.spatial_size))
+        imgs = x.reshape(shape=(x.shape[0], self.out_channels, self.temporal_size, self.spatial_size[0], self.spatial_size[1]))
         return imgs
 
     def forward(self, x, t, y):
@@ -501,49 +502,49 @@ class DiT(nn.Module):
 #                                   DiT Configs                                  #
 #################################################################################
 
-def DiT_XL_2(**kwargs):
-    return DiT(depth=28, hidden_size=1152, patch_size=2, num_heads=16, **kwargs)
+# def DiT_XL_2(**kwargs):
+#     return DiT(depth=28, hidden_size=1152, patch_size=2, num_heads=16, **kwargs)
 
-def DiT_XL_4(**kwargs):
-    return DiT(depth=28, hidden_size=1152, patch_size=4, num_heads=16, **kwargs)
+# def DiT_XL_4(**kwargs):
+#     return DiT(depth=28, hidden_size=1152, patch_size=4, num_heads=16, **kwargs)
 
-def DiT_XL_8(**kwargs):
-    return DiT(depth=28, hidden_size=1152, patch_size=8, num_heads=16, **kwargs)
+# def DiT_XL_8(**kwargs):
+#     return DiT(depth=28, hidden_size=1152, patch_size=8, num_heads=16, **kwargs)
 
-def DiT_L_2(**kwargs):
-    return DiT(depth=24, hidden_size=1024, patch_size=2, num_heads=16, **kwargs)
+# def DiT_L_2(**kwargs):
+#     return DiT(depth=24, hidden_size=1024, patch_size=2, num_heads=16, **kwargs)
 
-def DiT_L_4(**kwargs):
-    return DiT(depth=24, hidden_size=1024, patch_size=4, num_heads=16, **kwargs)
+# def DiT_L_4(**kwargs):
+#     return DiT(depth=24, hidden_size=1024, patch_size=4, num_heads=16, **kwargs)
 
-def DiT_L_8(**kwargs):
-    return DiT(depth=24, hidden_size=1024, patch_size=8, num_heads=16, **kwargs)
+# def DiT_L_8(**kwargs):
+#     return DiT(depth=24, hidden_size=1024, patch_size=8, num_heads=16, **kwargs)
 
-def DiT_B_2(**kwargs):
-    return DiT(depth=12, hidden_size=768, patch_size=2, num_heads=12, **kwargs)
+# def DiT_B_2(**kwargs):
+#     return DiT(depth=12, hidden_size=768, patch_size=2, num_heads=12, **kwargs)
 
-def DiT_B_4(**kwargs):
-    return DiT(depth=12, hidden_size=768, patch_size=4, num_heads=12, **kwargs)
+# def DiT_B_4(**kwargs):
+#     return DiT(depth=12, hidden_size=768, patch_size=4, num_heads=12, **kwargs)
 
-def DiT_B_8(**kwargs):
-    return DiT(depth=12, hidden_size=768, patch_size=8, num_heads=12, **kwargs)
+# def DiT_B_8(**kwargs):
+#     return DiT(depth=12, hidden_size=768, patch_size=8, num_heads=12, **kwargs)
 
-def DiT_S_2(**kwargs):
-    return DiT(depth=12, hidden_size=384, patch_size=2, num_heads=6, **kwargs)
+# def DiT_S_2(**kwargs):
+#     return DiT(depth=12, hidden_size=384, patch_size=2, num_heads=6, **kwargs)
 
-def DiT_S_4(**kwargs):
-    return DiT(depth=12, hidden_size=384, patch_size=4, num_heads=6, **kwargs)
+# def DiT_S_4(**kwargs):
+#     return DiT(depth=12, hidden_size=384, patch_size=4, num_heads=6, **kwargs)
 
-def DiT_S_8(**kwargs):
-    return DiT(depth=12, hidden_size=384, patch_size=8, num_heads=6, **kwargs)
+# def DiT_S_8(**kwargs):
+#     return DiT(depth=12, hidden_size=384, patch_size=8, num_heads=6, **kwargs)
 
 
-DiT_models = {
-    'DiT-XL/2': DiT_XL_2,  'DiT-XL/4': DiT_XL_4,  'DiT-XL/8': DiT_XL_8,
-    'DiT-L/2':  DiT_L_2,   'DiT-L/4':  DiT_L_4,   'DiT-L/8':  DiT_L_8,
-    'DiT-B/2':  DiT_B_2,   'DiT-B/4':  DiT_B_4,   'DiT-B/8':  DiT_B_8,
-    'DiT-S/2':  DiT_S_2,   'DiT-S/4':  DiT_S_4,   'DiT-S/8':  DiT_S_8,
-}
+# DiT_models = {
+#     'DiT-XL/2': DiT_XL_2,  'DiT-XL/4': DiT_XL_4,  'DiT-XL/8': DiT_XL_8,
+#     'DiT-L/2':  DiT_L_2,   'DiT-L/4':  DiT_L_4,   'DiT-L/8':  DiT_L_8,
+#     'DiT-B/2':  DiT_B_2,   'DiT-B/4':  DiT_B_4,   'DiT-B/8':  DiT_B_8,
+#     'DiT-S/2':  DiT_S_2,   'DiT-S/4':  DiT_S_4,   'DiT-S/8':  DiT_S_8,
+# }
 
 
 from dataclasses import dataclass
@@ -570,9 +571,9 @@ def DiTModelWrapper(
         dropout: float = 0.0,
         norm_num_groups: int = 32,
         attention_bias: bool = True,
-        spatial_size : int = 64,
+        spatial_size : Tuple[int, int] = (3, 5),
         temporal_size : int = 16,
-        spatial_patch_size: int = 4,
+        spatial_patch_size : Tuple[int, int] = (1, 1),
         temporal_patch_size: int = 4,
         activation_fn: str = "gelu-approximate",
         num_embeds_ada_norm: Optional[int] = 1000,

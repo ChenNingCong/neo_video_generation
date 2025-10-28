@@ -7,11 +7,13 @@ from einops import rearrange
 from typing import Any, Tuple
 from dataclasses import dataclass
 from pathlib import Path
+from collections import namedtuple
 @dataclass
 class VideoDatasetInfo:
     is_latent : bool
     image_shape : Tuple
     vae_preprocessor : Any
+    vae_postprocessor : Any
     vae : Any
 
 from torch.utils.data import Dataset
@@ -24,7 +26,7 @@ class AdaptorDataset(Dataset):
 
     def __getitem__(self, idx):
         video = self.base_dataset[idx]["video"]
-        return {"video": video, "labels": None}
+        return {"video": video, "labels": 0}
 
 def make_dataset_info(frame_rate: int = 8):
     files = sorted(glob.glob((Path(__file__).parent / "./local_video/cheeky-cornflower-*.done").as_posix()))
@@ -64,9 +66,9 @@ def make_dataset_info(frame_rate: int = 8):
             self._decode = None
         def lazy(self):
             print("decoding!")
-            from lucid_v1.lucid_v1.models.vqvae import VQVAE
+            from lucid_v1.models.vqvae import VQVAE
             import tensorflow as tf
-            from lucid_v1.lucid_v1.launch import hf_hub_download, vae_model_config
+            from lucid_v1.launch import hf_hub_download, vae_model_config
             from collections import namedtuple
             import ml_collections
             import pickle
@@ -105,13 +107,16 @@ def make_dataset_info(frame_rate: int = 8):
         def decode(self, x):
             if self._decode is None:
                 self.lazy()
-            return self._decode(x)
+            # create namedtuple for type compatibility
+            # has a single field sample
+            return namedtuple("VAEOutput", ["sample"])(self._decode(x))
     dataset = AdaptorDataset(VideoDataset())
     vae = JAXVAE()
 
     dataset_info = VideoDatasetInfo(
         image_shape=(C, T, H, W), 
         is_latent=True,
-        vae = None,
-        vae_preprocessor = lambda x : vae.decode(x))
+        vae = vae,
+        vae_preprocessor = lambda x : x,
+        vae_postprocessor = namedtuple("PostProcessor", ["postprocess"])(lambda image, output_type : image))
     return dataset, dataset_info

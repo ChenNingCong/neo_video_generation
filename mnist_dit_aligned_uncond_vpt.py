@@ -422,28 +422,27 @@ class MNISTFactory(AbstractTrainerFactory):
         model = DiTModelWrapper(
             num_attention_heads = 16,
             attention_head_dim = 32,
-            in_channels = 1,
-            out_channels = 1,
+            in_channels = 256,
+            out_channels = 256,
             num_layers = 12,
             dropout = 0.0,
             norm_num_groups = 16, # not used
             attention_bias = True,
-            spatial_size = 32,
+            spatial_size = (3, 5),
             temporal_size = 16,
-            spatial_patch_size = 1,
+            spatial_patch_size = (1, 1),
             temporal_patch_size = 1,
             num_embeds_ada_norm = None,
             class_condition=False,
-            num_classes=-1
+            num_classes=0
         )
         return model
     def make_optimizer(self, model):
         return ZeroRedundancyOptimizer(model.parameters(), optimizer_class=torch.optim.AdamW, lr = 2e-4, weight_decay=0.0)
     def make_dataloader(self, rank : int): 
         per_device_batch_size = self.per_device_batch_size
-        with new_cd("datasets/"):
-            dataset, _ = load_moving_mnist(32, 32, split="train")
-            dataset = OVerlayDataset(dataset)
+        from vpt_process.firework_preprocess import make_dataset_info
+        dataset, dataset_info = make_dataset_info(16)
         if self.use_single:
             dataset = SingleDataset(dataset, base_l=64)
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=per_device_batch_size, drop_last=True, num_workers=4)
@@ -451,7 +450,7 @@ class MNISTFactory(AbstractTrainerFactory):
             sampler = None
         else:
             sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=rank, shuffle=True, seed = 0, drop_last=True)
-        return VideoDatasetInfo(image_shape=(1, 16, 32, 32), is_latent=False), dataloader, sampler
+        return dataset_info, dataloader, sampler
     def make_scheduler(self, optimizer):
         from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
         WARMUP_STEPS = 500
