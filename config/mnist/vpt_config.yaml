@@ -6,7 +6,7 @@ trainer:
     world_size : 1
     epoch : 100000
     dtype : "torch.bfloat16"
-    eval_n_sample : 50000
+    eval_n_sample : 100000
     save_n_sample : 1000000
     enable_wandb : True
     project_name : video_generation_test

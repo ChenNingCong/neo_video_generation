@@ -20,6 +20,7 @@ from data_script.dataset_info import VideoDatasetInfo
 from data_script.wand_display_video import display_mnist_video_tensor
 from dataclasses import dataclass
 BATCH_SIZE = 8
+FRAME_LENGTH = 64
 """Moving MNIST dataset from http://www.cs.toronto.edu/~nitish/unsupervised_video.
 
 Augments the original Moving MNIST dataset with labels for text guided video diffusion.
@@ -429,7 +430,7 @@ class MNISTFactory(AbstractTrainerFactory):
             norm_num_groups = 16, # not used
             attention_bias = True,
             spatial_size = (3, 5),
-            temporal_size = 16,
+            temporal_size = FRAME_LENGTH,
             spatial_patch_size = (1, 1),
             temporal_patch_size = 1,
             num_embeds_ada_norm = None,
@@ -442,7 +443,7 @@ class MNISTFactory(AbstractTrainerFactory):
     def make_dataloader(self, rank : int): 
         per_device_batch_size = self.per_device_batch_size
         from vpt_process.firework_preprocess import make_dataset_info
-        dataset, dataset_info = make_dataset_info(16)
+        dataset, dataset_info = make_dataset_info(FRAME_LENGTH)
         if self.use_single:
             dataset = SingleDataset(dataset, base_l=64)
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=per_device_batch_size, drop_last=True, num_workers=4)
