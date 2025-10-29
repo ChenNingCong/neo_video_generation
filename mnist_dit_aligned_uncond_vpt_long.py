@@ -448,7 +448,9 @@ class MNISTFactory(AbstractTrainerFactory):
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=per_device_batch_size, drop_last=True, num_workers=4)
         if self.world_size == 1:
             sampler = None
+            dataloader = torch.utils.data.DataLoader(dataset, batch_size=per_device_batch_size, drop_last=True, num_workers=4, shuffle=True)
         else:
+            dataloader = torch.utils.data.DataLoader(dataset, batch_size=per_device_batch_size, drop_last=True, num_workers=4, shuffle=False)
             sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=rank, shuffle=True, seed = 0, drop_last=True)
         return dataset_info, dataloader, sampler
     def make_scheduler(self, optimizer):
