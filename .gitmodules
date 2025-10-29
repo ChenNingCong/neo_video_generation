@@ -1,0 +1,3 @@
+[submodule "tiny_trainer"]
+	path = tiny_trainer
+	url = https://github.com/ChenNingCong/tiny_trainer.git
