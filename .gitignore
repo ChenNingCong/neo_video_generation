@@ -10,3 +10,4 @@ wandb_key.sh
 wandb
 datasets/
 *.mp4
+vpt_process/new_local_video/
