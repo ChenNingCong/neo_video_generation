@@ -92,6 +92,7 @@ def make_dataset_info(frame_rate: int = 8):
 
             def sdecode(x : torch.Tensor):
                 # x is B C T H W shape
+                assert x.shape == (x.shape[0], 256, T, 3, 5)
                 p = jnp.array(rearrange(x, 'b c t h w->(b t) h w c').cpu().numpy())
                 frames = []
                 for i in range(p.shape[0]):
