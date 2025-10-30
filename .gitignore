@@ -11,3 +11,4 @@ wandb
 datasets/
 *.mp4
 vpt_process/new_local_video/
+vpt_process/vae_video/
