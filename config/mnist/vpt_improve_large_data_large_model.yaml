@@ -1,0 +1,14 @@
+defaults:
+    - trainer : base
+    - diffusion : base
+    - _self_
+trainer:
+    world_size : 1
+    epoch : 100000
+    dtype : "torch.bfloat16"
+    eval_n_sample : 100000
+    save_n_sample : 1000000
+    enable_wandb : True
+    project_name : video_generation_test
+    run_name : mnist_dit_aligned_uncond_vpt_improve_large_data_large_model
+use_single: False

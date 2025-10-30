@@ -1,5 +1,8 @@
 # %load_ext autoreload
 # %autoreload 3
+import os
+# prevent static allocation
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 import torch
 from video_model_rope_cond_general_improve import DiTModelWrapper
 from dataclasses import dataclass
@@ -419,12 +422,13 @@ class MNISTFactory(AbstractTrainerFactory):
         self.world_size = world_size
         self.use_single = use_single
     def make_model(self):
+        # a 450M model
         model = DiTModelWrapper(
             num_attention_heads = 16,
-            attention_head_dim = 32,
+            attention_head_dim = 64,
             in_channels = 256,
             out_channels = 256,
-            num_layers = 12,
+            num_layers = 24,
             dropout = 0.0,
             norm_num_groups = 16, # not used
             attention_bias = True,
