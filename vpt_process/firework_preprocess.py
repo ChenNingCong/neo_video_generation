@@ -67,7 +67,7 @@ def make_dataset_info(frame_rate: int = 8, files = DEFAULT_FILES, dtype=np.float
             assert frame_id >= 0
             assert video_id < len(_ms)
             _m = _ms[video_id]
-            return {"video":np.asarray(_m[frame_id:frame_id+T]).transpose(1, 0, 2, 3)}
+            return {"video":np.asarray(_m[frame_id:frame_id+T], copy=True).transpose(1, 0, 2, 3)}
         
     class JAXVAE:
         def __init__(self):

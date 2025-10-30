@@ -543,7 +543,7 @@ class MNISTFactory(AbstractTrainerFactory):
             dataset = SingleDataset(dataset, base_l=64)
         from torchdata.stateful_dataloader import StatefulDataLoader
         sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=rank, shuffle=True, seed = 0, drop_last=True)
-        dataloader1 = StatefulDataLoader(dataset, batch_size=per_device_batch_size, shuffle=False, num_workers=8, sampler=sampler, prefetch_factor=4)
+        dataloader1 = StatefulDataLoader(dataset, batch_size=per_device_batch_size, shuffle=False, num_workers=4, sampler=sampler)
         dataloader = MultiTaskDataLoader([dataloader1], strategy=TaskSamplingStrategy.none)
         return dataset_info, dataloader, sampler
     def make_scheduler(self, optimizer):
