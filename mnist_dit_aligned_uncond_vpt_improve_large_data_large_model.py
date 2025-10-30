@@ -41,7 +41,96 @@ from torch.utils.data import Dataset
 from torchvision.transforms import v2
 from tqdm import tqdm
 from typing import Callable, List, Tuple
+import random
+from enum import Enum
 
+from torch.utils.data import IterableDataset
+
+
+class TaskSamplingStrategy(Enum):
+    propotional = 0
+    union = 0
+    equal = 1
+    none = 2
+    round_robin = 3
+    parallel = 4
+
+
+def unlimited(iterator):
+    """
+    itertools.cycle will have the same data order for each epoch,
+    this allows shuffling at the start of each epoch
+    """
+    while True:
+        for x in iterator:
+            yield x
+
+
+class MultiTaskDataLoader(IterableDataset):
+    """wraps dataloaders into one dataloader"""
+
+    def __init__(self, dataloaders, strategy=TaskSamplingStrategy.none, seed=42):
+        self.dataloaders = dataloaders
+        self.strategy = strategy
+        self.lens = [len(dl) for dl in self.dataloaders]
+        self.rng = random.Random(seed)
+        self.dataset = [0 for _ in range(len(self))]
+        self.batch_size = dataloaders[0].batch_size
+
+    def __len__(self):
+        if self.strategy == TaskSamplingStrategy.parallel:
+            return min(self.lens)
+        else:
+            return sum(self.lens)
+
+    def __iter__(self):
+        if self.strategy == TaskSamplingStrategy.union:
+            iterators = [unlimited(dl) for dl in self.dataloaders]
+            ids = []
+            for i, dl in enumerate(self.dataloaders):
+                ids.extend([i] * len(dl))
+            self.rng.shuffle(ids)
+            for id in ids:
+                nxt = next(iterators[id])
+                yield nxt
+        elif self.strategy == TaskSamplingStrategy.propotional:
+            iterators = [unlimited(dl) for dl in self.dataloaders]
+            ids = list(range(len(iterators)))
+            weights = self.lens
+            for id in self.rng.choices(ids, weights=weights, k=len(self)):
+                nxt = next(iterators[id])
+                yield nxt
+        elif self.strategy == TaskSamplingStrategy.equal:
+            iterators = [unlimited(dl) for dl in self.dataloaders]
+            ids = list(range(len(iterators)))
+            for id in self.rng.choices(ids, k=len(self)):
+                nxt = next(iterators[id])
+                yield nxt
+        elif self.strategy == TaskSamplingStrategy.round_robin:
+            iterators = [unlimited(dl) for dl in self.dataloaders]
+            n = len(self.dataloaders)
+            for i in range(len(self)):
+                id = i % n
+                nxt = next(iterators[id])
+                yield nxt
+        elif self.strategy == TaskSamplingStrategy.none:
+            for dl in self.dataloaders:
+                for x in dl:
+                    yield x
+        elif self.strategy == TaskSamplingStrategy.parallel:
+            for batches in zip(*self.dataloaders):
+                yield batches
+        else:
+            NotImplementedError()
+
+    def state_dict(self):
+        return {"state" : [i.state_dict() for i in self.dataloaders], "rng" : self.rng}
+    def load_state_dict(self, d):
+        states = d["state"]
+        assert len(states) == len(self.dataloaders)
+        for dataloader, state in zip(self.dataloaders, states):
+            dataloader.load_state_dict(state)
+        self.rng = d["rng"]
 
 def load_moving_mnist_image(
     training_height: int,
@@ -452,13 +541,10 @@ class MNISTFactory(AbstractTrainerFactory):
         dataset, dataset_info = make_dataset_info(frame_rate=16, files = vae_files, dtype=np.float32)
         if self.use_single:
             dataset = SingleDataset(dataset, base_l=64)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=per_device_batch_size, drop_last=True, num_workers=4)
-        if self.world_size == 1:
-            sampler = None
-            dataloader = torch.utils.data.DataLoader(dataset, batch_size=per_device_batch_size, drop_last=True, num_workers=4, shuffle=True)
-        else:
-            dataloader = torch.utils.data.DataLoader(dataset, batch_size=per_device_batch_size, drop_last=True, num_workers=4, shuffle=False)
-            sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=rank, shuffle=True, seed = 0, drop_last=True)
+        from torchdata.stateful_dataloader import StatefulDataLoader
+        sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=rank, shuffle=True, seed = 0, drop_last=True)
+        dataloader1 = StatefulDataLoader(dataset, batch_size=per_device_batch_size, shuffle=False, num_workers=8, sampler=sampler, prefetch_factor=4)
+        dataloader = MultiTaskDataLoader([dataloader1], strategy=TaskSamplingStrategy.none)
         return dataset_info, dataloader, sampler
     def make_scheduler(self, optimizer):
         from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
@@ -499,6 +585,18 @@ class MNISTTrainer(DefaultTrainer):
         super().__init__(*args, **kwargs)
         self.diff_config = diff_config
         self.loss_fun = torch.nn.MSELoss()
+    def save_model(self, i, is_debug : bool = False):
+        if self.rank == 0:
+            model_name = f"model-{i}.pt"
+            # save the model here, firstly we need to unwrap the DDP module, then the torch.compile module
+            module = self.model.module
+            # we support both compiled and uncompiled module, so check the existence of _orig_mod
+            if hasattr(module, "_orig_mod"):
+                module = module._orig_mod
+            # Save a model file manually from the current directory:
+            if not is_debug:
+                torch.save({"module" : module, "dataloader" : self.dataloader.state_dict()}, os.path.join(wandb.run.dir, model_name))
+                wandb.save(model_name)
     def eval_model(self,i, is_debug = False):
         model = self.model
         model.eval()
