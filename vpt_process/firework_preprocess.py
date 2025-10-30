@@ -52,6 +52,7 @@ def make_dataset_info(frame_rate: int = 8, files = DEFAULT_FILES, dtype=np.float
     for file in files:
         _m = np.memmap(file, mode="r", dtype=dtype).reshape(-1, 3, 5, 256)
         T = _m.shape[0]
+        _m._mmap.close()
         del _m
         if T <= frame_rate:
             print(f"Waring : {file} shape is {_m.shape}, which is too small")
@@ -80,6 +81,7 @@ def make_dataset_info(frame_rate: int = 8, files = DEFAULT_FILES, dtype=np.float
             # _m is of shape (T, H, W, C)
             # transposed to (C, T, H, W)
             video = np.asarray(_m[frame_id:frame_id+T], copy=True).transpose(3, 0, 1, 2)
+            _m._mmap.close()
             del _m
             # remove handler
             return {"video":video}
