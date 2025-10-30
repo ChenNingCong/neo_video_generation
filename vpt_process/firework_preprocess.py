@@ -41,8 +41,12 @@ def make_dataset_info(frame_rate: int = 8, files = DEFAULT_FILES, dtype=np.float
     def open_m(x):
         _m = np.memmap(x, mode="r", dtype=dtype).reshape(-1, 3, 5, 256)
         _m = _m.transpose(0, 3, 1, 2) # T, C, H, W
+        if _m.shape[0] <= frame_rate:
+            print(f"Waring : {x} shape is {_m.shape}, which is too small")
+            return None
         return _m
     _ms = [open_m(i) for i in files]
+    _ms = [i for i in _ms if i is not None]
     print(len(_ms))
     C, T, H, W = 256, frame_rate, 3, 5
     class VideoDataset(torch.utils.data.Dataset):
