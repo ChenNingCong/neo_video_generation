@@ -55,6 +55,7 @@ class NormalAttention(nn.Module):
         self.proj = nn.Linear(dim, dim, bias=proj_bias)
         self.proj_drop = nn.Dropout(proj_drop)
         self.rope = RoPENd(shape=(*input_shape, dim // num_heads), padding=True)
+        self.image_rope = RoPENd(shape=(*input_shape[0:2], 1, dim // num_heads), padding=True)
         self.input_shape = input_shape
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, N, C = x.shape
@@ -63,12 +64,16 @@ class NormalAttention(nn.Module):
         q, k = self.q_norm(q), self.k_norm(k)
         # q, k must be of shape (b, h, w, t, dim)
         # now q, k are (B, num_heads, N, head_dim)
-        q = q.reshape(B, self.num_heads, self.input_shape[0], self.input_shape[1], self.input_shape[2], self.head_dim)
-        k = k.reshape(B, self.num_heads, self.input_shape[0], self.input_shape[1], self.input_shape[2], self.head_dim)
+        q = q.reshape(B, self.num_heads, self.input_shape[0], self.input_shape[1], -1, self.head_dim)
+        k = k.reshape(B, self.num_heads, self.input_shape[0], self.input_shape[1], -1, self.head_dim)
         # q = einops.rearrange(q, 'b head (h w t) d -> b head h w t d', h = self.input_shape[0], w = self.input_shape[1], t = self.input_shape[2])
         # k = einops.rearrange(k, 'b head (h w t) d -> b head h w t d', h = self.input_shape[0], w = self.input_shape[1], t = self.input_shape[2])
-        q = self.rope(q)
-        k = self.rope(k)
+        if q.shape[4] == 1:
+            q = self.image_rope(q)
+            k = self.image_rope(k)
+        else:
+            q = self.rope(q)
+            k = self.rope(k)
         # q = einops.rearrange(q, 'b head h w t d -> b head (h w t) d')
         # k = einops.rearrange(k, 'b head h w t d -> b head (h w t) d')
         q = q.reshape(B, self.num_heads, N, self.head_dim)
@@ -398,9 +403,9 @@ class DiT(nn.Module):
         to = self.temporal_size // tp
         ho = self.spatial_size[0] // sp[0]
         wo = self.spatial_size[1] // sp[1]
-        x = x.reshape(shape=(x.shape[0], to, ho, wo, tp, sp[0], sp[1], self.out_channels))
+        x = x.reshape(shape=(x.shape[0], -1, ho, wo, tp, sp[0], sp[1], self.out_channels))
         x = torch.einsum('nthwopqc->nctohpwq', x)
-        imgs = x.reshape(shape=(x.shape[0], self.out_channels, self.temporal_size, self.spatial_size[0], self.spatial_size[1]))
+        imgs = x.reshape(shape=(x.shape[0], self.out_channels, -1, self.spatial_size[0], self.spatial_size[1]))
         return imgs
 
     def forward(self, x, t, y):

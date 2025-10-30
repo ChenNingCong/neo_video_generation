@@ -1,7 +1,7 @@
 # %load_ext autoreload
 # %autoreload 3
 import torch
-from video_model_rope_cond_general_improve import DiTModelWrapper
+from video_model_rope_cond_general_improve_mixed_shape import DiTModelWrapper
 from dataclasses import dataclass
 import wandb
 import torch.distributed as dist
@@ -61,6 +61,7 @@ class MultiTaskDataLoader(IterableDataset):
         self.lens = [len(dl) for dl in self.dataloaders]
         self.rng = random.Random(seed)
         self.dataset = [0 for _ in range(len(self))]
+        self.batch_size = dataloaders[0].batch_size
 
     def __len__(self):
         if self.strategy == TaskSamplingStrategy.parallel:
@@ -538,9 +539,9 @@ class MNISTFactory(AbstractTrainerFactory):
         dataset2, _ = make_dataset_info(frame_rate=1, files = vae_files, dtype=np.float32)
         from torchdata.stateful_dataloader import StatefulDataLoader
         sampler = DistributedSampler(dataset1, num_replicas=self.world_size, rank=rank, shuffle=True, seed = 0, drop_last=True)
-        dataloader1 = StatefulDataLoader(dataset1, batch_size=per_device_batch_size, shuffle=False, num_workers=4, sampler=sampler)
+        dataloader1 = StatefulDataLoader(dataset1, batch_size=per_device_batch_size, shuffle=False, num_workers=8, sampler=sampler, prefetch_factor=4)
         sampler = DistributedSampler(dataset2, num_replicas=self.world_size, rank=rank, shuffle=True, seed = 0, drop_last=True)
-        dataloader2 = StatefulDataLoader(dataset2, batch_size=16 * per_device_batch_size, shuffle=False, num_workers=4, sampler=sampler)
+        dataloader2 = StatefulDataLoader(dataset2, batch_size=16 * per_device_batch_size, shuffle=False, num_workers=8, sampler=sampler, prefetch_factor=4)
         dataloader = MultiTaskDataLoader([dataloader1, dataloader2], strategy=TaskSamplingStrategy.equal)
         return dataset_info, dataloader, sampler
     def make_scheduler(self, optimizer):
@@ -582,7 +583,20 @@ class MNISTTrainer(DefaultTrainer):
         super().__init__(*args, **kwargs)
         self.diff_config = diff_config
         self.loss_fun = torch.nn.MSELoss()
+    def save_model(self, i, is_debug : bool = False):
+        if self.rank == 0:
+            model_name = f"model-{i}.pt"
+            # save the model here, firstly we need to unwrap the DDP module, then the torch.compile module
+            module = self.model.module
+            # we support both compiled and uncompiled module, so check the existence of _orig_mod
+            if hasattr(module, "_orig_mod"):
+                module = module._orig_mod
+            # Save a model file manually from the current directory:
+            if not is_debug:
+                torch.save({"module" : module, "dataloader" : self.dataloader.state_dict()}, os.path.join(wandb.run.dir, model_name))
+                wandb.save(model_name)
     def eval_model(self,i, is_debug = False):
+        return
         model = self.model
         model.eval()
         def normalize_image(x):
