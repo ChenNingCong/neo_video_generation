@@ -442,7 +442,10 @@ class MNISTFactory(AbstractTrainerFactory):
     def make_dataloader(self, rank : int): 
         per_device_batch_size = self.per_device_batch_size
         from vpt_process.firework_preprocess import make_dataset_info
-        dataset, dataset_info = make_dataset_info(16)
+        import glob
+        vae_files = glob.glob("vpt_process/vae_video/*.vae")
+        print(f"Num files from vae_files {len(vae_files)}")
+        dataset, dataset_info = make_dataset_info(frame_rate=16, files = vae_files, dtype=np.float32)
         if self.use_single:
             dataset = SingleDataset(dataset, base_l=64)
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=per_device_batch_size, drop_last=True, num_workers=4)
