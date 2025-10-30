@@ -585,6 +585,7 @@ class MNISTTrainer(DefaultTrainer):
         super().__init__(*args, **kwargs)
         self.diff_config = diff_config
         self.loss_fun = torch.nn.MSELoss()
+    @torch.no_grad
     def save_model(self, i, is_debug : bool = False):
         if self.rank == 0:
             model_name = f"model-{i}.pt"
@@ -597,6 +598,7 @@ class MNISTTrainer(DefaultTrainer):
             if not is_debug:
                 torch.save({"module" : module, "dataloader" : self.dataloader.state_dict()}, os.path.join(wandb.run.dir, model_name))
                 wandb.save(model_name)
+    @torch.no_grad
     def eval_model(self,i, is_debug = False):
         model = self.model
         model.eval()
@@ -645,6 +647,7 @@ class MNISTTrainer(DefaultTrainer):
             write_video("test.mp4", image_array.cpu().detach(), fps=8, options={'crf': '10'})
             video = wandb.Video(data_or_path="test.mp4")
             wandb.log({"video": video}, commit=False)
+    @torch.no_grad
     def prepare_input(self, data):
         image = data["video"].to(self.rank)
         device = self.rank

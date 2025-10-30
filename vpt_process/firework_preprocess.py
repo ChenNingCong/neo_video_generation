@@ -8,7 +8,7 @@ from typing import Any, Tuple
 from dataclasses import dataclass
 from pathlib import Path
 from collections import namedtuple
-from typing import Optional
+from typing import Optional, List
 @dataclass
 class VideoDatasetInfo:
     is_latent : bool
@@ -38,21 +38,30 @@ DEFAULT_FILES = sorted(glob.glob((Path(__file__).parent / "./local_video/cheeky-
 # only get done file
 DEFAULT_FILES = [i[:-len(".done")]+".vae" for i in DEFAULT_FILES]
 def make_dataset_info(frame_rate: int = 8, files = DEFAULT_FILES, dtype=np.float32):
-    def open_m(x):
-        _m = np.memmap(x, mode="r", dtype=dtype).reshape(-1, 3, 5, 256)
-        _m = _m.transpose(0, 3, 1, 2) # T, C, H, W
-        if _m.shape[0] <= frame_rate:
-            print(f"Waring : {x} shape is {_m.shape}, which is too small")
-            return None
-        return _m
-    _ms = [open_m(i) for i in files]
-    _ms = [i for i in _ms if i is not None]
-    print(len(_ms))
+    # def open_m(x):
+    #     _m = np.memmap(x, mode="r", dtype=dtype).reshape(-1, 3, 5, 256)
+    #     _m = _m.transpose(0, 3, 1, 2) # T, C, H, W
+    #     if _m.shape[0] <= frame_rate:
+    #         print(f"Waring : {x} shape is {_m.shape}, which is too small")
+    #         return None
+    #     return _m
+    # _ms = [open_m(i) for i in files]
+    # _ms = [i for i in _ms if i is not None]
+    valid_files : List[str] = []
+    valid_lengths : List[int] = []
+    for file in files:
+        _m = np.memmap(file, mode="r", dtype=dtype).reshape(-1, 3, 5, 256)
+        T = _m.shape[0]
+        if T <= frame_rate:
+            print(f"Waring : {file} shape is {_m.shape}, which is too small")
+            continue
+        valid_files.append(file)
+        valid_lengths.append(T)
     C, T, H, W = 256, frame_rate, 3, 5
     class VideoDataset(torch.utils.data.Dataset):
         def __init__(self):
             # remove T frames for each array
-            self.l = torch.tensor([i.shape[0] - T for i in _ms])
+            self.l = torch.tensor([i - T for i in valid_lengths])
             assert torch.all(self.l > 0)
             self.cum_l = self.l.cumsum(0)
         def __len__(self):
@@ -65,9 +74,14 @@ def make_dataset_info(frame_rate: int = 8, files = DEFAULT_FILES, dtype=np.float
             else:
                 frame_id = i - self.cum_l[video_id-1]
             assert frame_id >= 0
-            assert video_id < len(_ms)
-            _m = _ms[video_id]
-            return {"video":np.asarray(_m[frame_id:frame_id+T], copy=True).transpose(1, 0, 2, 3)}
+            assert video_id < len(valid_files)
+            _m = np.memmap(valid_files[video_id], mode="r", dtype=dtype).reshape(-1, 3, 5, 256)
+            # _m is of shape (T, H, W, C)
+            # transposed to (C, T, H, W)
+            video = np.asarray(_m[frame_id:frame_id+T], copy=True).transpose(3, 0, 1, 2)
+            del _m
+            # remove handler
+            return {"video":video}
         
     class JAXVAE:
         def __init__(self):
