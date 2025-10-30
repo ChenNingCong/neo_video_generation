@@ -596,7 +596,6 @@ class MNISTTrainer(DefaultTrainer):
                 torch.save({"module" : module, "dataloader" : self.dataloader.state_dict()}, os.path.join(wandb.run.dir, model_name))
                 wandb.save(model_name)
     def eval_model(self,i, is_debug = False):
-        return
         model = self.model
         model.eval()
         def normalize_image(x):
