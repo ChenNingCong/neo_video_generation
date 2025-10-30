@@ -22,6 +22,9 @@ import torch.nn.functional as F
 from rope_nd import RoPENd
 import einops
 from functools import partial
+class SquaredReLU(nn.Module):
+    def forward(self, x):
+        return torch.pow(torch.relu(x), 2)
 class NormalAttention(nn.Module):
     fused_attn: Final[bool]
 
@@ -99,7 +102,7 @@ class TimestepEmbedder(nn.Module):
         super().__init__()
         self.mlp = nn.Sequential(
             nn.Linear(frequency_embedding_size, hidden_size, bias=True),
-            nn.SiLU(),
+            nn.ReLU(),
             nn.Linear(hidden_size, hidden_size, bias=True),
         )
         self.frequency_embedding_size = frequency_embedding_size
@@ -191,7 +194,6 @@ class TextEmbedder(nn.Module):
 #################################################################################
 #                                 Core DiT Model                                #
 #################################################################################
-
 class DiTBlock(nn.Module):
     """
     A DiT block with adaptive layer norm zero (adaLN-Zero) conditioning.
@@ -199,13 +201,13 @@ class DiTBlock(nn.Module):
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, **block_kwargs):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.attn = NormalAttention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
+        self.attn = NormalAttention(hidden_size, num_heads=num_heads, qkv_bias=True, qk_norm=True, **block_kwargs)
         self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
-        approx_gelu = lambda: nn.GELU(approximate="tanh")
+        approx_gelu = lambda: SquaredReLU()
         self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=0)
         self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(),
+            nn.ReLU(),
             nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
 
@@ -225,7 +227,7 @@ class FinalLayer(nn.Module):
         self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.linear = nn.Linear(hidden_size, per_patch_output_size, bias=True)
         self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(),
+            nn.ReLU(),
             nn.Linear(hidden_size, 2 * hidden_size, bias=True)
         )
 
