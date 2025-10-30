@@ -1,7 +1,7 @@
 # %load_ext autoreload
 # %autoreload 3
 import torch
-from video_model_rope_cond_general import DiTModelWrapper
+from video_model_rope_cond_general_improve import DiTModelWrapper
 from dataclasses import dataclass
 import wandb
 import torch.distributed as dist
