@@ -647,6 +647,13 @@ class MNISTTrainer(DefaultTrainer):
             write_video("test.mp4", image_array.cpu().detach(), fps=8, options={'crf': '10'})
             video = wandb.Video(data_or_path="test.mp4")
             wandb.log({"video": video}, commit=False)
+        del image_array
+        # recycle memory on every rank
+        for i in range(2):
+            import gc
+            gc.collect()
+            torch.cuda.empty_cache()
+        torch.distributed.barrier()
     @torch.no_grad
     def prepare_input(self, data):
         image = data["video"].to(self.rank)
