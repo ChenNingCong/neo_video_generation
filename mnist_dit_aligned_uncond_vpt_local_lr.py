@@ -1,7 +1,7 @@
 # %load_ext autoreload
 # %autoreload 3
 import torch
-from video_model_rope_cond_general import DiTModelWrapper
+from video_model_rope_cond_general import DiTModelWrapper, DiTTransformer, DiT
 from dataclasses import dataclass
 import wandb
 import torch.distributed as dist
@@ -437,9 +437,27 @@ class MNISTFactory(AbstractTrainerFactory):
             num_classes=0
         )
         return model
-    def make_optimizer(self, model : DiTTransformer):
-
-        return ZeroRedundancyOptimizer(model.parameters(), optimizer_class=torch.optim.AdamW, lr = 2e-4, weight_decay=0.0)
+    def make_optimizer(self, model : DiT):
+        large_lr_params = []
+        small_lr_params = []
+        base_lr = 2e-4
+        high_lr = 5 * base_lr
+        weight_decay=0.0
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                if 'embedder' in name or ('linear' in name and "final" in name):
+                    large_lr_params.append(param)
+                    print("Large param group", name, param.shape)
+                else:
+                    small_lr_params.append(param)
+        # Create the parameter groups list
+        optimizer_parameters = [
+            {'params': large_lr_params, 'lr': high_lr, 'weight_decay' : weight_decay},
+            {'params': small_lr_params, 'lr': base_lr, 'weight_decay' : weight_decay}
+            # You can also set other options like 'weight_decay' here:
+            # {'params': feature_extractor_params, 'lr': lr_feature, 'weight_decay': 0.01},
+        ]
+        return ZeroRedundancyOptimizer(optimizer_parameters, optimizer_class=torch.optim.AdamW)
     def make_dataloader(self, rank : int): 
         per_device_batch_size = self.per_device_batch_size
         from vpt_process.firework_preprocess import make_dataset_info
