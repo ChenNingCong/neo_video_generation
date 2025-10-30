@@ -437,7 +437,8 @@ class MNISTFactory(AbstractTrainerFactory):
             num_classes=0
         )
         return model
-    def make_optimizer(self, model):
+    def make_optimizer(self, model : DiTTransformer):
+
         return ZeroRedundancyOptimizer(model.parameters(), optimizer_class=torch.optim.AdamW, lr = 2e-4, weight_decay=0.0)
     def make_dataloader(self, rank : int): 
         per_device_batch_size = self.per_device_batch_size
