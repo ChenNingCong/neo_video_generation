@@ -27,6 +27,95 @@ Augments the original Moving MNIST dataset with labels for text guided video dif
 Based on an implementation of unconditional MovingMNIST generation from:
 https://gist.github.com/praateekmahajan/b42ef0d295f528c986e2b3a0b31ec1fe
 """
+import random
+from enum import Enum
+
+from torch.utils.data import IterableDataset
+
+
+class TaskSamplingStrategy(Enum):
+    propotional = 0
+    union = 0
+    equal = 1
+    none = 2
+    round_robin = 3
+    parallel = 4
+
+
+def unlimited(iterator):
+    """
+    itertools.cycle will have the same data order for each epoch,
+    this allows shuffling at the start of each epoch
+    """
+    while True:
+        for x in iterator:
+            yield x
+
+
+class MultiTaskDataLoader(IterableDataset):
+    """wraps dataloaders into one dataloader"""
+
+    def __init__(self, dataloaders, strategy=TaskSamplingStrategy.none, seed=42):
+        self.dataloaders = dataloaders
+        self.strategy = strategy
+        self.lens = [len(dl) for dl in self.dataloaders]
+        self.rng = random.Random(seed)
+        self.dataset = [0 for _ in range(len(self))]
+
+    def __len__(self):
+        if self.strategy == TaskSamplingStrategy.parallel:
+            return min(self.lens)
+        else:
+            return sum(self.lens)
+
+    def __iter__(self):
+        if self.strategy == TaskSamplingStrategy.union:
+            iterators = [unlimited(dl) for dl in self.dataloaders]
+            ids = []
+            for i, dl in enumerate(self.dataloaders):
+                ids.extend([i] * len(dl))
+            self.rng.shuffle(ids)
+            for id in ids:
+                nxt = next(iterators[id])
+                yield nxt
+        elif self.strategy == TaskSamplingStrategy.propotional:
+            iterators = [unlimited(dl) for dl in self.dataloaders]
+            ids = list(range(len(iterators)))
+            weights = self.lens
+            for id in self.rng.choices(ids, weights=weights, k=len(self)):
+                nxt = next(iterators[id])
+                yield nxt
+        elif self.strategy == TaskSamplingStrategy.equal:
+            iterators = [unlimited(dl) for dl in self.dataloaders]
+            ids = list(range(len(iterators)))
+            for id in self.rng.choices(ids, k=len(self)):
+                nxt = next(iterators[id])
+                yield nxt
+        elif self.strategy == TaskSamplingStrategy.round_robin:
+            iterators = [unlimited(dl) for dl in self.dataloaders]
+            n = len(self.dataloaders)
+            for i in range(len(self)):
+                id = i % n
+                nxt = next(iterators[id])
+                yield nxt
+        elif self.strategy == TaskSamplingStrategy.none:
+            for dl in self.dataloaders:
+                for x in dl:
+                    yield x
+        elif self.strategy == TaskSamplingStrategy.parallel:
+            for batches in zip(*self.dataloaders):
+                yield batches
+        else:
+            NotImplementedError()
+
+    def state_dict(self):
+        return {"state" : [i.state_dict() for i in self.dataloaders], "rng" : self.rng}
+    def load_state_dict(self, d):
+        states = d["state"]
+        assert len(states) == len(self.dataloaders)
+        for dataloader, state in zip(self.dataloaders, states):
+            dataloader.load_state_dict(state)
+        self.rng = d["rng"]
 
 from bs4 import BeautifulSoup
 import numpy as np
@@ -445,16 +534,14 @@ class MNISTFactory(AbstractTrainerFactory):
         import glob
         vae_files = glob.glob("vpt_process/vae_video/*.vae")
         print(f"Num files from vae_files {len(vae_files)}")
-        dataset, dataset_info = make_dataset_info(frame_rate=16, files = vae_files, dtype=np.float32)
-        if self.use_single:
-            dataset = SingleDataset(dataset, base_l=64)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=per_device_batch_size, drop_last=True, num_workers=4)
-        if self.world_size == 1:
-            sampler = None
-            dataloader = torch.utils.data.DataLoader(dataset, batch_size=per_device_batch_size, drop_last=True, num_workers=4, shuffle=True)
-        else:
-            dataloader = torch.utils.data.DataLoader(dataset, batch_size=per_device_batch_size, drop_last=True, num_workers=4, shuffle=False)
-            sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=rank, shuffle=True, seed = 0, drop_last=True)
+        dataset1, dataset_info = make_dataset_info(frame_rate=16, files = vae_files, dtype=np.float32)
+        dataset2, _ = make_dataset_info(frame_rate=1, files = vae_files, dtype=np.float32)
+        from torchdata.stateful_dataloader import StatefulDataLoader
+        sampler = DistributedSampler(dataset1, num_replicas=self.world_size, rank=rank, shuffle=True, seed = 0, drop_last=True)
+        dataloader1 = StatefulDataLoader(dataset1, batch_size=per_device_batch_size, shuffle=False, num_workers=4, sampler=sampler)
+        sampler = DistributedSampler(dataset2, num_replicas=self.world_size, rank=rank, shuffle=True, seed = 0, drop_last=True)
+        dataloader2 = StatefulDataLoader(dataset2, batch_size=16 * per_device_batch_size, shuffle=False, num_workers=4, sampler=sampler)
+        dataloader = MultiTaskDataLoader([dataloader1, dataloader2], strategy=TaskSamplingStrategy.equal)
         return dataset_info, dataloader, sampler
     def make_scheduler(self, optimizer):
         from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
