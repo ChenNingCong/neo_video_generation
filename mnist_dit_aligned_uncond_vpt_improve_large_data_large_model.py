@@ -22,6 +22,11 @@ from data_script.single_dataset import SingleDataset
 from data_script.dataset_info import VideoDatasetInfo
 from data_script.wand_display_video import display_mnist_video_tensor
 from dataclasses import dataclass
+def collect_gc():
+    for _ in range(2):
+        import gc
+        gc.collect()
+        torch.cuda.empty_cache()
 BATCH_SIZE = 8
 """Moving MNIST dataset from http://www.cs.toronto.edu/~nitish/unsupervised_video.
 
@@ -543,8 +548,10 @@ class MNISTFactory(AbstractTrainerFactory):
             dataset = SingleDataset(dataset, base_l=64)
         from torchdata.stateful_dataloader import StatefulDataLoader
         sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=rank, shuffle=True, seed = 0, drop_last=True)
+        collect_gc()
         dataloader1 = StatefulDataLoader(dataset, batch_size=per_device_batch_size, shuffle=False, num_workers=4, sampler=sampler)
         dataloader = MultiTaskDataLoader([dataloader1], strategy=TaskSamplingStrategy.none)
+        collect_gc()
         return dataset_info, dataloader, sampler
     def make_scheduler(self, optimizer):
         from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
@@ -649,10 +656,25 @@ class MNISTTrainer(DefaultTrainer):
             wandb.log({"video": video}, commit=False)
         del image_array
         # recycle memory on every rank
-        for i in range(2):
-            import gc
-            gc.collect()
-            torch.cuda.empty_cache()
+        # # Compare the snapshots
+        # def format(diffs, file):
+        #     for stat in diffs:
+        #         print(stat, file=file)
+        #         # Iterate over the frames in the traceback and print them
+        #         # The traceback stores 'Frame' objects from the allocation point back to the start.
+        #         for line in stat.traceback.format():
+        #             print(line, file=file)
+        #         print("-" * 20 + '\n', file=file)
+        # import tracemalloc
+        # if not hasattr(self, "first_snapshot"):
+        #     if i != 0:
+        #         print("begin trace")
+        #         tracemalloc.start(20)
+        #         self.first_snapshot = tracemalloc.take_snapshot()
+        # else:
+        #     print("start trace")
+        #     with open(f"memlog-{i}.log", 'w') as f:
+        #         format(tracemalloc.take_snapshot().compare_to(self.first_snapshot , 'traceback'), file=f)
         torch.distributed.barrier()
     @torch.no_grad
     def prepare_input(self, data):
