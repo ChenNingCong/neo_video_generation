@@ -52,11 +52,11 @@ def make_dataset_info(frame_rate: int = 8, files = DEFAULT_FILES, dtype=np.float
     for file in files:
         _m = np.memmap(file, mode="r", dtype=dtype).reshape(-1, 3, 5, 256)
         T = _m.shape[0]
-        _m._mmap.close()
-        del _m
         if T <= frame_rate:
             print(f"Waring : {file} shape is {_m.shape}, which is too small")
             continue
+        _m._mmap.close()
+        del _m
         valid_files.append(file)
         valid_lengths.append(T)
     C, T, H, W = 256, frame_rate, 3, 5
