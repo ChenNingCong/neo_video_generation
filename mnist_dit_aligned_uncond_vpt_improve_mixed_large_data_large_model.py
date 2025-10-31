@@ -4,7 +4,7 @@ import os
 # prevent static allocation
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 import torch
-from video_model_rope_cond_general_improve import DiTModelWrapper
+from video_model_rope_cond_general_improve_mixed_shape import DiTModelWrapper
 from dataclasses import dataclass
 import wandb
 import torch.distributed as dist
@@ -543,14 +543,16 @@ class MNISTFactory(AbstractTrainerFactory):
         import glob
         vae_files = glob.glob("vpt_process/vae_video/*.vae")
         print(f"Num files from vae_files {len(vae_files)}")
-        dataset, dataset_info = make_dataset_info(frame_rate=16, files = vae_files, dtype=np.float32)
-        if self.use_single:
-            dataset = SingleDataset(dataset, base_l=64)
-        from torchdata.stateful_dataloader import StatefulDataLoader
-        sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=rank, shuffle=True, seed = 0, drop_last=True)
         collect_gc()
-        dataloader1 = StatefulDataLoader(dataset, batch_size=per_device_batch_size, shuffle=False, num_workers=4, sampler=sampler)
-        dataloader = MultiTaskDataLoader([dataloader1], strategy=TaskSamplingStrategy.none)
+        dataset1, dataset_info = make_dataset_info(frame_rate=16, files = vae_files, dtype=np.float32)
+        dataset2, _ = make_dataset_info(frame_rate=1, files = vae_files, dtype=np.float32)
+        from torchdata.stateful_dataloader import StatefulDataLoader
+        sampler = DistributedSampler(dataset1, num_replicas=self.world_size, rank=rank, shuffle=True, seed = 0, drop_last=True)
+        collect_gc()
+        dataloader1 = StatefulDataLoader(dataset1, batch_size=per_device_batch_size, shuffle=False, num_workers=8, sampler=sampler, prefetch_factor=4)
+        sampler = DistributedSampler(dataset2, num_replicas=self.world_size, rank=rank, shuffle=True, seed = 0, drop_last=True)
+        dataloader2 = StatefulDataLoader(dataset2, batch_size=16 * per_device_batch_size, shuffle=False, num_workers=8, sampler=sampler, prefetch_factor=4)
+        dataloader = MultiTaskDataLoader([dataloader1, dataloader2], strategy=TaskSamplingStrategy.equal)
         collect_gc()
         return dataset_info, dataloader, sampler
     def make_scheduler(self, optimizer):
