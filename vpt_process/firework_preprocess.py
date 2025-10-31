@@ -80,7 +80,9 @@ def make_dataset_info(frame_rate: int = 8, files = DEFAULT_FILES, dtype=np.float
             _m = np.memmap(valid_files[video_id], mode="r", dtype=dtype).reshape(-1, 3, 5, 256)
             # _m is of shape (T, H, W, C)
             # transposed to (C, T, H, W)
-            video = np.asarray(_m[frame_id:frame_id+T], copy=True).transpose(3, 0, 1, 2)
+            if np.isnan(_m).any():
+                assert False, valid_files[video_id]
+            video = torch.from_numpy(_m[frame_id:frame_id+T].transpose(3, 0, 1, 2)).clone().detach()
             _m._mmap.close()
             del _m
             # remove handler
